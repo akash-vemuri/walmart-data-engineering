@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  
+  - name: employees_t
+    columns:
+      - name: employee_id
+        data_tests:
+          - unique
+          - not_null
+
+  - name: orders_t
+    columns:
+      - name: order_id
+        data_tests:
+          - unique
+          - not_null
+
+  - name: stores_t
+    columns:
+      - name: store_id
+        data_tests:
+          - unique
+          - not_null
+
+  - name: products_t
+    columns:
+      - name: product_id
+        data_tests:
+          - not_null
+          - unique:
+              config:
+                where: "price > 0"

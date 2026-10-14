@@ -1,0 +1,69 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+wheels/
+*.egg-info/
+
+# ============================================================
+# Virtual environments
+# ============================================================
+.venv/
+**/.venv/
+venv/
+env/
+
+# ============================================================
+# Environment variables and secrets
+# ============================================================
+.env
+.env.*
+!.env.example
+**/profiles.yml
+
+# Private keys
+*.pem
+*.key
+
+# ============================================================
+# Airflow generated files
+# ============================================================
+/logs/
+airflow_dbt_project/logs/
+airflow_dbt_project/airflow.db
+airflow_dbt_project/config/__pycache__/
+airflow_dbt_project/plugins/__pycache__/
+
+# ============================================================
+# Airflow generated configuration
+# ============================================================
+airflow_dbt_project/config/airflow.cfg
+
+# ============================================================
+# dbt generated files
+# ============================================================
+airflow_dbt_project/walmart_dbt_project/target/
+airflow_dbt_project/walmart_dbt_project/dbt_packages/
+airflow_dbt_project/walmart_dbt_project/logs/
+**/.user.yml
+
+# ============================================================
+# IDE and operating system
+# ============================================================
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Old standalone dbt project copy
+# ============================================================
+/walmart_dbt_project/

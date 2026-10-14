@@ -1,0 +1,8 @@
+
+target/
+dbt_packages/
+logs/
+.env
+
+# Local dbt connection configuration
+profiles.yml

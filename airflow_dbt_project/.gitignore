@@ -1,0 +1,31 @@
+﻿# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Airflow generated files
+logs/
+airflow.db
+airflow.db-shm
+airflow.db-wal
+
+# dbt generated files
+walmart_dbt_project/target/
+walmart_dbt_project/logs/
+walmart_dbt_project/dbt_packages/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log

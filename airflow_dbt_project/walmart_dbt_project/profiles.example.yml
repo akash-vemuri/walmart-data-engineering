@@ -1,0 +1,11 @@
+walmart_dbt_project:
+  outputs:
+    dev:
+      catalog: de_project
+      host: YOUR_DATABRICKS_HOST
+      http_path: YOUR_DATABRICKS_HTTP_PATH
+      schema: default
+      threads: 1
+      token: "{{ env_var('DATABRICKS_TOKEN') }}"
+      type: databricks
+  target: dev
