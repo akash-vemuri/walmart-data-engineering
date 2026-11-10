@@ -1,191 +1,65 @@
 # Walmart End-to-End Data Engineering Project
 
-An end-to-end Data Engineering portfolio project built with Databricks Free Trial, Unity Catalog, Delta Lake, PySpark, dbt, Apache Airflow, Docker Compose, SQL, and Git.
+An end-to-end data engineering portfolio project using Databricks, Unity Catalog, Delta Lake, PySpark, dbt, Apache Airflow, Docker Compose, SQL, and Git. It ingests retail CSV data into Bronze Delta tables, transforms it through Silver and Gold layers, checks data quality, and tracks dimension history with dbt snapshots.
 
-The pipeline ingests retail CSV files, stores them in Bronze Delta tables, transforms them through Silver and Gold layers, validates data quality, tracks historical dimension changes with dbt snapshots, and orchestrates execution with Airflow.
+> **Project status:** The pipeline has completed successfully in the development environment. The row counts and validation outcomes below are observed results, not guarantees for future runs.
 
-> **Project status:** The pipeline has completed successfully in the development environment. Row counts and validation outcomes below are observed results from the development runs, not guarantees for future executions.
+## Table of contents
 
-## Table of Contents
-
-- [Project Overview](#project-overview)
-- [Architecture](#architecture)
-- [Technology Stack](#technology-stack)
-- [Source Data](#source-data)
-- [Data Layers](#data-layers)
-- [Data Quality and Validation](#data-quality-and-validation)
-- [Airflow Orchestration](#airflow-orchestration)
-- [Repository Structure](#repository-structure)
-- [Prerequisites](#prerequisites)
-- [Configuration](#configuration)
-- [Running the Pipeline](#running-the-pipeline)
+- [Project overview](#project-overview)
+- [Architecture and data layers](#architecture-and-data-layers)
+- [Data quality](#data-quality)
+- [Airflow orchestration](#airflow-orchestration)
+- [Repository structure](#repository-structure)
+- [Prerequisites and configuration](#prerequisites-and-configuration)
+- [Run the pipeline](#run-the-pipeline)
 - [Security](#security)
-- [Limitations and Future Improvements](#limitations-and-future-improvements)
+- [Limitations and future improvements](#limitations-and-future-improvements)
 
-## Project Overview
+## Project overview
 
-The goal is to build a maintainable data pipeline that turns raw retail source files into analytics-ready datasets. The project was implemented manually to develop practical understanding of the tools and how they integrate.
+The project turns six retail datasets—customers, employees, orders, order items, products, and stores—into analytics-ready data. It uses a Databricks Free Trial workspace. Raw CSV files, Auto Loader schema metadata, and ingestion checkpoints are stored in Unity Catalog Volumes; there is no separate Azure Data Lake Storage or Amazon S3 landing layer.
 
-The project uses a Databricks Free Trial workspace. Raw CSV files, Auto Loader schema metadata, and ingestion checkpoints are stored in Unity Catalog Volumes; the pipeline does not use Azure Data Lake Storage or Amazon S3 as a separate raw landing layer.
+The Databricks ingestion job is configured in the workspace and triggered by Airflow. The dbt project and orchestration code are in this repository.
 
-The pipeline demonstrates:
-
-- CSV ingestion with Databricks Auto Loader.
-- Delta Lake tables organized with Unity Catalog.
-- A Medallion Architecture with Bronze, Silver, and Gold layers.
-- SQL transformations and tests using dbt.
-- Historical dimension tracking using dbt snapshots.
-- Pipeline orchestration using Apache Airflow.
-- Containerized Airflow execution using Docker Compose.
-- SQL checks for grain, keys, referential integrity, and row counts.
-
-## Architecture
+## Architecture and data layers
 
 ```text
-                         Retail CSV files
-                                |
-                                v
-                    Databricks Auto Loader
-                                |
-                                v
-                    BRONZE: Delta tables
-                                |
-                                v
-                    SILVER: Technical models
-                                |
-                                v
-                    SILVER: Business OBT
-                                |
-                                v
-                    GOLD: Ephemeral models
-                         /            \
-                        v              v
-                 dbt snapshots     Gold fact model
-                        |
-                        v
-                 Gold dimensions
+Retail CSV files in a Unity Catalog Volume
+                  |
+                  v
+     Databricks Auto Loader ingestion job
+                  |
+                  v
+          Bronze Delta tables
+                  |
+                  v
+       Silver technical models
+                  |
+                  v
+        Silver business OBT
+           /             \
+          v               v
+  Gold ephemeral models   (order-item grain)
+          |
+          +--> dbt snapshots --> Gold dimensions
+          |
+          +--------------------> Gold fact model
 
-             Apache Airflow orchestrates the workflow
+       Apache Airflow orchestrates the stages
 ```
 
-Airflow first triggers the Databricks ingestion job. Once it succeeds, Airflow runs dbt source freshness, Silver transformations and tests, Gold ephemeral models, snapshots, and the Gold fact model in sequence.
+The source files are expected under `/Volumes/de_project/bronze/raw_data`. The ingestion job writes the six Bronze tables in `de_project.bronze`; `_ingested_at` is used by dbt source freshness checks.
 
-## Technology Stack
+The Silver technical models use the `_t` suffix. The Silver business model, `silver_b.obt_b`, has one row per order item and joins order, customer, product, and store data. Employee data follows a separate dimension path to avoid multiplying fact rows when a store has multiple employees.
 
-| Technology | Role in the project |
-|---|---|
-| Python | Supporting pipeline logic and configuration |
-| PySpark | Distributed processing in Databricks |
-| Databricks Free Trial | Data processing environment |
-| Unity Catalog | Catalog, schema, table, and Volume organization |
-| Delta Lake | Table storage format |
-| Databricks Auto Loader | File discovery and ingestion |
-| dbt Core | SQL transformations, tests, and snapshots |
-| dbt-databricks | dbt adapter for Databricks |
-| Apache Airflow | Workflow orchestration |
-| Docker Compose | Containerized Airflow environment |
-| SQL | Transformation and data validation |
-| Git | Version control |
+The Gold layer includes customer, employee, product, store, and order dimensions, plus `de_project.gold.fact_orders`. The fact table has order-item grain and includes order/customer/product/store identifiers and quantity and monetary measures. dbt snapshots track historical dimension records; the order snapshot uses `order_id` and an order-update timestamp.
 
-## Source Data
+## Data quality
 
-The pipeline processes six CSV datasets:
+The dbt project includes source freshness checks, Silver model tests, and a singular OBT test for null business keys. Additional development validation checked keys, uniqueness, referential integrity, fact grain, snapshot metadata, and aggregate measures.
 
-| Dataset | Description |
-|---|---|
-| `customers` | Customer records |
-| `employees` | Employee records |
-| `orders` | Order-level records |
-| `order_items` | Individual items within orders |
-| `products` | Product records |
-| `stores` | Store records |
-
-The source files are stored in the Unity Catalog Volume at `/Volumes/de_project/bronze/raw_data`. The notebook uses file patterns to discover matching CSV files. Auto Loader schema metadata and per-table streaming checkpoints are also stored under this Volume.
-
-## Data Layers
-
-### 1. Bronze: ingestion
-
-The ingestion notebook uses Databricks Auto Loader with CSV input and Delta output. Raw CSV files, schema metadata, and per-table checkpoint directories are stored within the same Unity Catalog Volume. It uses separate schema and checkpoint locations for each source table, append mode, and `availableNow` processing.
-
-The `_ingested_at` timestamp records ingestion time and is used by dbt source freshness checks. The notebook also includes logging and exception propagation so a failed ingestion can be surfaced to the orchestrator.
-
-Bronze tables:
-
-```text
-de_project.bronze.customers
-de_project.bronze.employees
-de_project.bronze.orders
-de_project.bronze.order_items
-de_project.bronze.products
-de_project.bronze.stores
-```
-
-### 2. Silver Technical
-
-The technical layer provides technical representations of Bronze data. Models use the `_t` suffix, for example:
-
-```text
-silver_t.customers_t
-silver_t.employees_t
-silver_t.orders_t
-silver_t.order_items_t
-silver_t.products_t
-silver_t.stores_t
-```
-
-These models prepare the source data for downstream business transformations.
-
-### 3. Silver Business
-
-The business layer creates a One Big Table (OBT):
-
-```text
-silver_b.obt_b
-```
-
-The OBT grain is one row per order item. It combines relevant order, customer, product, and store information while preserving the order-item grain.
-
-Employee data is handled through its own downstream dimension path rather than being joined directly into the order-item fact path. This avoids multiplying fact rows when a store has multiple employees.
-
-### 4. Gold: dimensions and facts
-
-The Gold layer provides analytics-oriented tables.
-
-**Dimension tables**
-
-| Table | Purpose |
-|---|---|
-| `de_project.gold.dim_customers` | Customer dimension |
-| `de_project.gold.dim_employees` | Employee dimension |
-| `de_project.gold.dim_products` | Product dimension |
-| `de_project.gold.dim_stores` | Store dimension |
-| `de_project.gold.dim_orders` | Order dimension |
-
-**Fact table**
-
-`de_project.gold.fact_orders` has an order-item grain and includes order, customer, product, and store identifiers together with quantity and monetary measures.
-
-**Historical tracking**
-
-dbt snapshots maintain historical versions of dimension records. The order snapshot uses `order_id` as its unique key and an order-update timestamp for change tracking. The current snapshot configuration uses a far-future `dbt_valid_to` value to represent current rows.
-
-## Data Quality and Validation
-
-The project includes dbt tests and SQL validation queries for:
-
-- Source freshness.
-- Silver model tests.
-- Null business keys.
-- Dimension key uniqueness.
-- Referential integrity and orphan records.
-- Fact-table grain and duplicate order-item identifiers.
-- Snapshot key counts and validity metadata.
-- Aggregate business measures.
-
-### Observed row counts
-
-The following counts were observed during development validation:
+Observed development counts:
 
 | Table | Rows |
 |---|---:|
@@ -202,131 +76,101 @@ The following counts were observed during development validation:
 | Gold `dim_orders` | 10,000 |
 | Gold `fact_orders` | 30,021 |
 
-### Fact-table validation observed
+In the recorded fact validation, there were 30,021 rows, 10,000 distinct orders, 30,021 distinct order-item IDs, no nulls in the checked keys, no duplicate order-item IDs returned by the check, and no orphans in the checked relationships. Re-run validations after code or data changes.
 
-- Total rows: `30,021`
-- Distinct orders: `10,000`
-- Distinct order-item IDs: `30,021`
-- Nulls in the checked order, order-item, customer, product, and store keys: `0`
-- Duplicate order-item IDs: none returned by the duplicate-check query
-- Orphan rows in the checked relationships: `0`
+## Airflow orchestration
 
-These are results from the validation queries shown during development. Re-run the checks after future code or data changes.
+The `orchestrate` DAG runs these tasks in order:
 
-## Airflow Orchestration
+1. `run_databricks_job` — trigger and wait for the Bronze ingestion job.
+2. `clean_target` and `source_freshness`.
+3. Run and test `silver_t`, then run and test `silver_b`.
+4. Run Gold ephemeral models, execute dbt snapshots, and build the Gold fact model.
 
-The DAG is named `orchestrate`. The current task sequence is:
+The local Docker Compose setup uses Apache Airflow 3.1.8 with CeleryExecutor. It is intended for local development, not production.
 
-1. `run_databricks_job`
-2. `clean_target`
-3. `source_freshness`
-4. `silver_technical`
-5. `silver_technical_tests`
-6. `silver_business`
-7. `silver_business_tests`
-8. `gold_ephemeral`
-9. `gold_dimensions`
-10. `gold_facts`
-
-The Databricks task triggers the ingestion job and waits for a terminal state before allowing downstream tasks to proceed. dbt commands execute sequentially, with tests following the Silver transformations.
-
-The project has completed successfully in the development environment. The Airflow deployment uses Docker Compose and an Airflow 3.1.8 image.
-
-## Repository Structure
-
-The active project layout is expected to resemble:
+## Repository structure
 
 ```text
-dbt_walmart/
+.
 ├── README.md
-├── .gitignore
-├── .python-version
-├── pyproject.toml
+├── main.py                         # Convenience launcher for local Airflow Compose
+├── pyproject.toml                  # Python project metadata and dbt dependencies
 ├── uv.lock
 └── airflow_dbt_project/
+    ├── .env.example
     ├── Dockerfile
     ├── docker-compose.yaml
-    ├── .env.example
     ├── dags/
     │   ├── orchestrate.py
     │   └── databricks_connection_test.py
-    ├── config/
-    ├── plugins/
     └── walmart_dbt_project/
         ├── dbt_project.yml
         ├── profiles.example.yml
-        ├── models/
-        ├── snapshots/
-        ├── tests/
         ├── macros/
-        ├── analyses/
-        └── seeds/
+        ├── models/
+        │   ├── gold/
+        │   ├── silver_b/
+        │   ├── silver_t/
+        │   └── source/
+        ├── snapshots/
+        └── tests/
 ```
 
-Generated dbt directories such as `target/`, `logs/`, and `dbt_packages/` should not be committed. The obsolete standalone `walmart_dbt_project/` copy at the repository root is intentionally excluded from version control; the active copy is inside `airflow_dbt_project/`.
+Compose mounts `config/` and `plugins/` paths for local Airflow customization; those directories are not currently tracked in this repository. Generated dbt directories such as `target/`, `logs/`, and `dbt_packages/` are excluded from version control.
 
-Confirm the filenames and folders against the repository before publishing.
+## Prerequisites and configuration
 
-## Prerequisites
+You need:
 
-Before running the project, configure:
+- Docker Desktop with Docker Compose and enough resources for the Airflow stack.
+- A Databricks workspace with Unity Catalog enabled, a SQL warehouse, and the required catalog, schema, table, and Volume permissions.
+- A Databricks job for Bronze ingestion (the DAG currently references a job ID in `airflow_dbt_project/dags/orchestrate.py`).
+- Git. Python 3.12 is specified for local project tooling.
 
-- Docker Desktop with Docker Compose.
-- A Databricks Free Trial workspace with Unity Catalog enabled.
-- A Databricks job for Bronze ingestion.
-- Unity Catalog permissions for the required catalog, schemas, tables, and Volume.
-- Sufficient workspace and compute availability for the selected Databricks Free Trial.
-- A Databricks SQL warehouse for dbt.
-- Python and the local development tools used by this repository.
-- Git.
-
-Cloud resources may incur charges. Stop resources when they are no longer needed.
-
-## Configuration
+Cloud resources may incur charges; stop them when they are not needed.
 
 ### Airflow environment
 
-Create an `.env` file in `airflow_dbt_project/` based on `.env.example`. Supply the required Databricks settings, including:
+From the repository root, copy `airflow_dbt_project/.env.example` to `airflow_dbt_project/.env`. Set the Databricks host and token, and replace the JWT secret with a unique random value. For example, generate one with:
 
-```dotenv
-DATABRICKS_HOST=your_databricks_workspace_host
-DATABRICKS_TOKEN=your_databricks_token
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Use a valid token with only the permissions required by the pipeline. Do not commit real tokens.
+The example also includes local Airflow UI username/password settings. Change them to values you choose before starting the stack. The Compose defaults of `airflow` / `airflow` are for local development only and must not be used in a shared or production deployment.
 
 ### dbt profile
 
-Create a local `profiles.yml` based on `profiles.example.yml`. Configure the Databricks catalog, schema, SQL warehouse HTTP path, and authentication. Keep the credential-bearing profile out of version control.
+Create a local `profiles.yml` based on `airflow_dbt_project/walmart_dbt_project/profiles.example.yml`. Configure the Databricks host, catalog, schema, SQL warehouse HTTP path, and authentication. Keep the credential-bearing profile out of version control.
 
-Do not put actual tokens or passwords in the README, example files, screenshots, or Git history.
+## Run the pipeline
 
-## Running the Pipeline
-
-Complete the environment configuration before running commands.
-
-### Start Airflow
-
-From the Airflow project directory:
+After configuring the environment and dbt profile, start the local Airflow stack from the repository root with either the convenience launcher:
 
 ```bash
+python main.py
+```
+
+or directly with Docker Compose:
+
+```bash
+cd airflow_dbt_project
 docker compose up -d --build
 docker compose ps
 ```
 
-Inspect worker logs when troubleshooting:
+Open the Airflow UI at `http://localhost:8080`, sign in with the local credentials you configured, and trigger the `orchestrate` DAG. The DAG runs the Databricks job and then the dbt stages. To inspect worker logs:
 
 ```bash
+cd airflow_dbt_project
 docker compose logs --tail 100 airflow-worker
 ```
 
-Service names and availability depend on the checked-in Compose configuration.
-
-### Run dbt commands
-
-Run these in an environment with dbt installed and the correct profile configured. In the Airflow setup, these commands are executed by the DAG.
+You can also run dbt commands manually in an environment with dbt installed and the profile configured, from the dbt project directory:
 
 ```bash
+cd airflow_dbt_project/walmart_dbt_project
 dbt source freshness
 dbt run --select silver_t
 dbt test --select silver_t
@@ -337,39 +181,12 @@ dbt snapshot
 dbt run --select gold/fact
 ```
 
-The DAG runs the stages in sequence. Check the Airflow task logs for failures and the dbt output for test results.
+Check Airflow task logs and dbt output for failures and test results.
 
-## Security and Version Control
+## Security
 
-The repository should exclude:
+Do not commit `.env` files, Databricks tokens, credential-bearing `profiles.yml` files, private keys, or passwords. Use the example files only as templates, rotate credentials if exposed, and review staged files before committing. The Compose setup, including its local database credentials and UI defaults, is not a production deployment configuration.
 
-- `.env` files containing credentials.
-- dbt `profiles.yml` files containing credentials.
-- Local Python virtual environments.
-- Generated Airflow logs and local database files.
-- Generated dbt artifacts.
-- Local IDE settings.
-- Private keys and certificates.
+## Limitations and future improvements
 
-Use `.env.example` and `profiles.example.yml` to document required settings without exposing real secrets. Review staged files for credentials before every commit.
-
-## Limitations and Future Improvements
-
-Potential next improvements include:
-
-- More robust incremental processing and late-arriving-data handling.
-- Automated integration tests.
-- CI/CD for dbt validation and deployment.
-- Improved secrets management.
-- Deferrable Airflow operators or sensors for long-running Databricks jobs.
-- Centralized monitoring and alerting.
-- Additional source-to-target reconciliation checks.
-- Documented recovery and backfill procedures.
-
-These are potential improvements, not claims that the features are already implemented.
-
-## Project Goals
-
-This project demonstrates practical work with cloud ingestion, distributed processing, Medallion Architecture, Delta Lake, dbt transformations and tests, snapshot-based historical tracking, data-quality validation, workflow orchestration, Docker-based development, and version control.
-
-The aim is to keep the pipeline understandable, testable, and maintainable.
+Potential next steps include more robust incremental and late-arriving-data handling, automated integration tests, CI/CD for dbt validation and deployment, improved secrets management, deferrable Airflow operators or sensors, centralized monitoring and alerting, source-to-target reconciliation, and documented recovery/backfill procedures. These are future improvements, not features currently claimed as implemented.
