@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import timedelta
 from airflow.sdk import dag, task
@@ -18,8 +19,22 @@ def orchestrate():
         try:
             print("Triggering Databricks ingestion job...")
 
+            job_id = os.getenv("DATABRICKS_JOB_ID")
+
+            if not job_id:
+                raise ValueError(
+                    "DATABRICKS_JOB_ID environment variable is not configured."
+                )
+
+            try:
+                job_id = int(job_id)
+            except ValueError as e:
+                raise ValueError(
+                    "DATABRICKS_JOB_ID must be a valid integer."
+                ) from e
+
             job_trigger = ws.jobs.run_now(
-                job_id="940385257864024"
+                job_id=job_id
             )
 
             run_id = job_trigger.run_id

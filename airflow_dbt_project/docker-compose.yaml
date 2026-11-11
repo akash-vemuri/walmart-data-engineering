@@ -60,6 +60,7 @@ x-airflow-common:
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     DATABRICKS_HOST: ${DATABRICKS_HOST}
     DATABRICKS_TOKEN: ${DATABRICKS_TOKEN}
+    DATABRICKS_JOB_ID: ${DATABRICKS_JOB_ID:?Set DATABRICKS_JOB_ID in your .env file}
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow

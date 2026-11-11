@@ -5,7 +5,6 @@ select
     product_id,
     store_id,
     quantity,
-    total_amount,
     unit_price,
     line_amount
 from 
