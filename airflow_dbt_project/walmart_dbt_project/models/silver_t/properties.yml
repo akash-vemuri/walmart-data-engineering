@@ -1,7 +1,15 @@
+
 version: 2
 
 models:
-  
+
+  - name: customers_t
+    columns:
+      - name: customer_id
+        data_tests:
+          - unique
+          - not_null
+
   - name: employees_t
     columns:
       - name: employee_id
@@ -12,6 +20,13 @@ models:
   - name: orders_t
     columns:
       - name: order_id
+        data_tests:
+          - unique
+          - not_null
+
+  - name: order_items_t
+    columns:
+      - name: order_item_id
         data_tests:
           - unique
           - not_null
