@@ -53,11 +53,11 @@ The source files are expected under `/Volumes/de_project/bronze/raw_data`. The i
 
 The Silver technical models use incremental materialization with a 5-minute ingestion-time lookback to capture recently arriving records. Each model applies `ROW_NUMBER()` partitioned by its business key and selects the latest available version using `_ingested_at` and `updated_timestamp`. This deduplication is applied during both incremental processing and full refreshes.
 
-The lookback helps handle short delays in source arrival, while deduplication prevents multiple versions of the same business key from creating duplicate target records. Records arriving outside the configured lookback window may still require a backfill or full refresh.
+The incremental models use a conditional version comparison during processing: new business keys are inserted, newer source versions update existing records, and older late-arriving versions are prevented from overwriting newer target records. The 5-minute lookback is a bounded recovery window rather than a guarantee of capturing records arriving at any future time.
 
 The Silver business model, `silver_b.obt_b`, has one row per order item and joins order, customer, product, and store data. Employee data follows a separate path and is included in the business model for completeness.
 
-The Gold layer includes customer, employee, product, store, and order dimensions, plus `de_project.gold.fact_orders`. The fact table has order-item grain and includes order/customer/product/store identifiers and derived metrics.
+The Gold layer includes customer, employee, product, store, and order dimensions, plus `de_project.gold.fact_orders`. The fact table has order-item grain and includes order/customer/product/store identifiers and quantity and monetary measures. dbt snapshots track historical dimension records; the order snapshot uses `order_id` and an order-update timestamp.
 
 ## Data quality
 
@@ -194,4 +194,8 @@ Do not commit `.env` files, Databricks tokens, credential-bearing `profiles.yml`
 
 ## Limitations and future improvements
 
-Potential next steps include configurable lookback windows and automated backfill mechanisms for late-arriving data beyond the current 5-minute window, automated integration tests, CI/CD for dbt validation and deployment, improved secrets management, deferrable Airflow tasks, and more explicit data-version tracking for high-frequency batch updates.
+The Silver technical models implement incremental processing with a 5-minute ingestion-time lookback. Source records are deduplicated using their business keys, prioritizing the latest `updated_timestamp` and using `_ingested_at` as a tie-breaker. Before updating an existing Silver record, the model compares the incoming version against the target and accepts only newer business versions. This protects existing records from older versions arriving late within the configured lookback window.
+
+This behavior was validated using controlled duplicate, late-arriving, and newer-version scenarios in the products model.
+
+Potential next steps include configurable lookback windows, automated backfill mechanisms for records arriving outside the current window, automated integration tests, CI/CD for dbt validation and deployment, improved secrets management, deferrable Airflow operators or sensors, centralized monitoring and alerting, source-to-target reconciliation, and documented recovery procedures.

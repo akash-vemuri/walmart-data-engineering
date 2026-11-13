@@ -36,15 +36,43 @@ deduplicated_source as (
         row_number() over (
             partition by employee_id
             order by
-                _ingested_at desc,
-                updated_timestamp desc
+                updated_timestamp desc,
+                _ingested_at desc
         ) as row_num
     from filtered_source
 
+),
+
+latest_source as (
+
+    select
+        * except (row_num),
+        current_timestamp() as processed_at
+    from deduplicated_source
+    where row_num = 1
+
 )
 
+{% if is_incremental() %}
+
 select
-    * except (row_num),
-    current_timestamp() as processed_at
-from deduplicated_source
-where row_num = 1
+    source.*
+from latest_source as source
+
+left join {{ this }} as target
+    on source.employee_id = target.employee_id
+
+where
+    target.employee_id is null
+    or source.updated_timestamp > target.updated_timestamp
+    or (
+        source.updated_timestamp = target.updated_timestamp
+        and source._ingested_at > target._ingested_at
+    )
+
+{% else %}
+
+select *
+from latest_source
+
+{% endif %}
