@@ -1,6 +1,6 @@
 # Walmart End-to-End Data Engineering Project
 
-An end-to-end data engineering portfolio project using Databricks, Unity Catalog, Delta Lake, PySpark, dbt, Apache Airflow, Docker Compose, SQL, and Git. It ingests retail CSV data into Bronze Delta tables, transforms it through Silver and Gold layers, checks data quality, and tracks dimension history with dbt snapshots.
+An end-to-end data engineering portfolio project using Databricks, Unity Catalog, Delta Lake, PySpark, dbt, Apache Airflow, Docker Compose, SQL, and Git. It ingests retail CSV data into Bronze Delta tables and transforms it through Silver and Gold layers for analytics and dimensional modeling.
 
 > **Project status:** The pipeline has completed successfully in the development environment. The row counts and validation outcomes below are observed results, not guarantees for future runs.
 
@@ -18,7 +18,7 @@ An end-to-end data engineering portfolio project using Databricks, Unity Catalog
 
 ## Project overview
 
-The project turns six retail datasets—customers, employees, orders, order items, products, and stores—into analytics-ready data. It uses a Databricks Free Trial workspace. Raw CSV files, Auto Loader schema metadata, and ingestion checkpoints are stored in Unity Catalog Volumes; there is no separate Azure Data Lake Storage or Amazon S3 landing layer.
+The project turns six retail datasets—customers, employees, orders, order items, products, and stores—into analytics-ready data. It uses a Databricks Free Trial workspace. Raw CSV files are ingested using Auto Loader and written into Bronze Delta tables before the dbt transformations begin.
 
 The Databricks ingestion job is configured in the workspace and triggered by Airflow. The dbt project and orchestration code are in this repository.
 
@@ -51,13 +51,13 @@ Retail CSV files in a Unity Catalog Volume
 
 The source files are expected under `/Volumes/de_project/bronze/raw_data`. The ingestion job writes the six Bronze tables in `de_project.bronze`; `_ingested_at` is used by dbt source freshness checks.
 
-The Silver technical models use the `_t` suffix. The Silver business model, `silver_b.obt_b`, has one row per order item and joins order, customer, product, and store data. Employee data follows a separate dimension path to avoid multiplying fact rows when a store has multiple employees.
+The Silver technical models use the `_t` suffix. The Silver business model, `silver_b.obt_b`, has one row per order item and joins order, customer, product, and store data. Employee data follows a separate path and is included in the business model for completeness.
 
-The Gold layer includes customer, employee, product, store, and order dimensions, plus `de_project.gold.fact_orders`. The fact table has order-item grain and includes order/customer/product/store identifiers and quantity and monetary measures. dbt snapshots track historical dimension records; the order snapshot uses `order_id` and an order-update timestamp.
+The Gold layer includes customer, employee, product, store, and order dimensions, plus `de_project.gold.fact_orders`. The fact table has order-item grain and includes order/customer/product/store identifiers and derived metrics.
 
 ## Data quality
 
-The dbt project includes source freshness checks, Silver model tests, and a singular OBT test for null business keys. Additional development validation checked keys, uniqueness, referential integrity, fact grain, snapshot metadata, and aggregate measures.
+The dbt project includes source freshness checks, Silver model tests, and a singular OBT test for null business keys. Additional development validation checked keys, uniqueness, referential integrity, and row-count consistency across the data pipeline.
 
 Observed development counts:
 
@@ -76,7 +76,7 @@ Observed development counts:
 | Gold `dim_orders` | 10,000 |
 | Gold `fact_orders` | 30,021 |
 
-In the recorded fact validation, there were 30,021 rows, 10,000 distinct orders, 30,021 distinct order-item IDs, no nulls in the checked keys, no duplicate order-item IDs returned by the check, and no orphans in the checked relationships. Re-run validations after code or data changes.
+In the recorded fact validation, there were 30,021 rows, 10,000 distinct orders, 30,021 distinct order-item IDs, no nulls in the checked keys, no duplicate order-item IDs returned by the check, and no broken referential relationships.
 
 ## Airflow orchestration
 
@@ -94,6 +94,7 @@ The local Docker Compose setup uses Apache Airflow 3.1.8 with CeleryExecutor. It
 ```text
 .
 ├── README.md
+├── .python-version
 ├── main.py                         # Convenience launcher for local Airflow Compose
 ├── pyproject.toml                  # Python project metadata and dbt dependencies
 ├── uv.lock
@@ -125,14 +126,14 @@ You need:
 
 - Docker Desktop with Docker Compose and enough resources for the Airflow stack.
 - A Databricks workspace with Unity Catalog enabled, a SQL warehouse, and the required catalog, schema, table, and Volume permissions.
-- A Databricks job for Bronze ingestion (the DAG currently references a job ID in `airflow_dbt_project/dags/orchestrate.py`).
+- A Databricks job for Bronze ingestion. Set its ID as `DATABRICKS_JOB_ID` in `airflow_dbt_project/.env`.
 - Git. Python 3.12 is specified for local project tooling.
 
 Cloud resources may incur charges; stop them when they are not needed.
 
 ### Airflow environment
 
-From the repository root, copy `airflow_dbt_project/.env.example` to `airflow_dbt_project/.env`. Set the Databricks host and token, and replace the JWT secret with a unique random value. For example, generate one with:
+From the repository root, copy `airflow_dbt_project/.env.example` to `airflow_dbt_project/.env`. Set the Databricks host, token, and job ID, and replace the JWT secret with a unique random value. For example:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -185,8 +186,8 @@ Check Airflow task logs and dbt output for failures and test results.
 
 ## Security
 
-Do not commit `.env` files, Databricks tokens, credential-bearing `profiles.yml` files, private keys, or passwords. Use the example files only as templates, rotate credentials if exposed, and review staged files before committing. The Compose setup, including its local database credentials and UI defaults, is not a production deployment configuration.
+Do not commit `.env` files, Databricks tokens, credential-bearing `profiles.yml` files, private keys, or passwords. Use the example files only as templates, rotate credentials if exposed, and review secrets before sharing any configuration.
 
 ## Limitations and future improvements
 
-Potential next steps include more robust incremental and late-arriving-data handling, automated integration tests, CI/CD for dbt validation and deployment, improved secrets management, deferrable Airflow operators or sensors, centralized monitoring and alerting, source-to-target reconciliation, and documented recovery/backfill procedures. These are future improvements, not features currently claimed as implemented.
+Potential next steps include more robust incremental and late-arriving-data handling, automated integration tests, CI/CD for dbt validation and deployment, improved secrets management, deferrable Airflow tasks, and more explicit data-version tracking for high-frequency batch updates.
