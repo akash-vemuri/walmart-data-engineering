@@ -6,42 +6,45 @@
     )
 }}
 
-{% if is_incremental() %}
+with filtered_source as (
 
-with watermark as (
     select
-        coalesce(
-            max(_ingested_at) - INTERVAL 5 MINUTES,
-            TIMESTAMP '1900-01-01 00:00:00'
-        ) as last_ingested_at
-    from {{ this }}
+        source_data.*
+    from {{ source('walmart_databricks', 'employees') }} as source_data
+
+    {% if is_incremental() %}
+
+    cross join (
+        select
+            coalesce(
+                max(_ingested_at) - INTERVAL 5 MINUTES,
+                TIMESTAMP '1900-01-01 00:00:00'
+            ) as last_ingested_at
+        from {{ this }}
+    ) as watermark
+
+    where source_data._ingested_at >= watermark.last_ingested_at
+
+    {% endif %}
+
 ),
 
-filtered_source as (
+deduplicated_source as (
+
     select
-        source_data.*,
+        *,
         row_number() over (
             partition by employee_id
             order by
                 _ingested_at desc,
                 updated_timestamp desc
         ) as row_num
-    from {{ source('walmart_databricks', 'employees') }} as source_data
-    cross join watermark
-    where source_data._ingested_at >= watermark.last_ingested_at
+    from filtered_source
+
 )
 
 select
     * except (row_num),
     current_timestamp() as processed_at
-from filtered_source
+from deduplicated_source
 where row_num = 1
-
-{% else %}
-
-select
-    *,
-    current_timestamp() as processed_at
-from {{ source('walmart_databricks', 'employees') }}
-
-{% endif %}
