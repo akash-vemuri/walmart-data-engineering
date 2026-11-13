@@ -51,7 +51,11 @@ Retail CSV files in a Unity Catalog Volume
 
 The source files are expected under `/Volumes/de_project/bronze/raw_data`. The ingestion job writes the six Bronze tables in `de_project.bronze`; `_ingested_at` is used by dbt source freshness checks.
 
-The Silver technical models use the `_t` suffix. The Silver business model, `silver_b.obt_b`, has one row per order item and joins order, customer, product, and store data. Employee data follows a separate path and is included in the business model for completeness.
+The Silver technical models use incremental materialization with a 5-minute ingestion-time lookback to capture recently arriving records. Each model applies `ROW_NUMBER()` partitioned by its business key and selects the latest available version using `_ingested_at` and `updated_timestamp`. This deduplication is applied during both incremental processing and full refreshes.
+
+The lookback helps handle short delays in source arrival, while deduplication prevents multiple versions of the same business key from creating duplicate target records. Records arriving outside the configured lookback window may still require a backfill or full refresh.
+
+The Silver business model, `silver_b.obt_b`, has one row per order item and joins order, customer, product, and store data. Employee data follows a separate path and is included in the business model for completeness.
 
 The Gold layer includes customer, employee, product, store, and order dimensions, plus `de_project.gold.fact_orders`. The fact table has order-item grain and includes order/customer/product/store identifiers and derived metrics.
 
