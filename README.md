@@ -194,4 +194,4 @@ Do not commit `.env` files, Databricks tokens, credential-bearing `profiles.yml`
 
 ## Limitations and future improvements
 
-Potential next steps include more robust incremental and late-arriving-data handling, automated integration tests, CI/CD for dbt validation and deployment, improved secrets management, deferrable Airflow tasks, and more explicit data-version tracking for high-frequency batch updates.
+Potential next steps include configurable lookback windows and automated backfill mechanisms for late-arriving data beyond the current 5-minute window, automated integration tests, CI/CD for dbt validation and deployment, improved secrets management, deferrable Airflow tasks, and more explicit data-version tracking for high-frequency batch updates.
